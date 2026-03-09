@@ -1,0 +1,19 @@
+version: '3.8'
+
+services:
+  qobuz-web:
+    build: .
+    container_name: qobuz-web
+    ports:
+      - "5000:5000"
+    volumes:
+      - ./downloads:/downloads
+      # Config persists across container rebuilds
+      - ./config:/root/.config/qobuz-dl
+    environment:
+      - DOWNLOAD_DIR=/downloads
+      # Download speed cap in KB/s — set to 0 to disable
+      - BANDWIDTH_LIMIT_KB=1024
+      # Quality: 5=MP3 320, 6=FLAC CD, 7=Hi-Res 24b, 27=Hi-Res 24b+
+      - DEFAULT_QUALITY=6
+    restart: unless-stopped
