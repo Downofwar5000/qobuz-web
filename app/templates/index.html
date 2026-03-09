@@ -1,0 +1,229 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Qobuz Downloader</title>
+    <style>
+        /* ── Base ── */
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: Arial, sans-serif; background: #111827; color: #e5e7eb; min-height: 100vh; }
+
+        .container { max-width: 860px; margin: 40px auto; padding: 0 20px; }
+        h1 { text-align: center; color: #a78bfa; font-size: 1.9rem; margin-bottom: 28px; }
+
+        /* ── Tabs ── */
+        .tab-bar { display: flex; gap: 4px; }
+        .tab-btn {
+            padding: 11px 26px; border: none; cursor: pointer; font-size: 1rem;
+            background: #1f2937; color: #9ca3af; border-radius: 8px 8px 0 0;
+            transition: background 0.2s;
+        }
+        .tab-btn.active { background: #0f172a; color: #a78bfa; font-weight: bold; }
+
+        .tab-panel { background: #0f172a; border-radius: 0 8px 8px 8px; padding: 30px; display: none; }
+        .tab-panel.active { display: block; }
+
+        /* ── Form elements ── */
+        label { display: block; margin-bottom: 8px; color: #a78bfa; font-weight: bold; }
+        textarea {
+            width: 100%; padding: 14px; border-radius: 8px;
+            border: 1px solid #374151; background: #1f2937; color: #e5e7eb;
+            font-size: 1rem; resize: vertical; min-height: 200px;
+        }
+        textarea::placeholder { color: #6b7280; }
+
+        /* ── Buttons ── */
+        .btn { padding: 10px 22px; border: none; border-radius: 8px; cursor: pointer; font-size: 1rem; font-weight: bold; }
+        .btn-primary   { background: #7c3aed; color: #fff; }
+        .btn-secondary { background: #374151; color: #d1d5db; }
+        .btn-danger    { background: #991b1b; color: #fff; }
+        .btn:hover     { filter: brightness(1.15); }
+
+        /* ── Feedback message ── */
+        #feedback {
+            margin-top: 16px; padding: 12px; border-radius: 8px;
+            display: none; font-weight: bold;
+        }
+        #feedback.success { background: #064e3b; color: #6ee7b7; display: block; }
+        #feedback.error   { background: #7f1d1d; color: #fca5a5; display: block; }
+
+        /* ── Queue tab ── */
+        .queue-controls { display: flex; gap: 10px; align-items: center; margin-bottom: 20px; }
+        #queue-summary  { color: #9ca3af; font-size: 0.9rem; }
+
+        table { width: 100%; border-collapse: collapse; }
+        th { padding: 10px 12px; text-align: left; background: #1f2937; color: #a78bfa; }
+        td { padding: 10px 12px; border-bottom: 1px solid #1f2937; }
+        tr:hover td { background: #1e293b; }
+
+        .artist-cell { font-weight: bold; }
+        .empty-msg   { text-align: center; padding: 40px; color: #6b7280; }
+
+        /* ── Status badges ── */
+        .badge {
+            display: inline-block; padding: 3px 10px;
+            border-radius: 20px; font-size: 0.78rem; font-weight: bold; text-transform: uppercase;
+        }
+        .badge-pending     { background: #1e3a5f; color: #60a5fa; }
+        .badge-downloading { background: #4c1d95; color: #c4b5fd; animation: pulse 1.4s infinite; }
+        .badge-done        { background: #064e3b; color: #6ee7b7; }
+        .badge-error       { background: #7f1d1d; color: #fca5a5; }
+
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+    </style>
+</head>
+<body>
+<div class="container">
+    <h1>🎵 Qobuz Downloader</h1>
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+        <button class="tab-btn active" data-tab="add"   onclick="switchTab('add',   this)">➕ Add Artists</button>
+        <button class="tab-btn"        data-tab="queue" onclick="switchTab('queue', this)">📋 Queue</button>
+    </div>
+
+    <!-- ── Tab: Add Artists ──────────────────────────────────────────── -->
+    <div id="panel-add" class="tab-panel active">
+        <label for="artist-input">Artist names — one per line</label>
+        <textarea
+            id="artist-input"
+            placeholder="Pink Floyd&#10;Miles Davis&#10;Radiohead&#10;..."
+        ></textarea>
+        <small style="color:#6b7280; display:block; margin: 8px 0 18px;">
+            Each artist is queued separately and downloaded one at a time.
+        </small>
+        <button class="btn btn-primary" onclick="addToQueue()">Add to Queue</button>
+        <div id="feedback"></div>
+    </div>
+
+    <!-- ── Tab: Queue ────────────────────────────────────────────────── -->
+    <div id="panel-queue" class="tab-panel">
+        <div class="queue-controls">
+            <button class="btn btn-secondary" onclick="loadQueue()">🔄 Refresh</button>
+            <button class="btn btn-danger"    onclick="clearCompleted()">🗑 Clear Completed</button>
+            <span id="queue-summary"></span>
+        </div>
+        <div id="queue-table"></div>
+    </div>
+</div>
+
+<script>
+    // ── Tab switching ──────────────────────────────────────────────────────────
+    function switchTab(name, btn) {
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.querySelectorAll('.tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        document.getElementById('panel-' + name).classList.add('active');
+        if (name === 'queue') loadQueue();
+    }
+
+    // ── Add artists to queue ───────────────────────────────────────────────────
+    async function addToQueue() {
+        const raw = document.getElementById('artist-input').value.trim();
+
+        if (!raw) {
+            showFeedback('Please enter at least one artist name.', 'error');
+            return;
+        }
+
+        try {
+            const res  = await fetch('/add', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ artists: raw }),
+            });
+            const data = await res.json();
+
+            if (res.ok) {
+                const names = data.added.map(a => a.artist).join(', ');
+                showFeedback(`✅ Queued: ${names}`, 'success');
+                document.getElementById('artist-input').value = '';
+            } else {
+                showFeedback(`❌ ${data.error}`, 'error');
+            }
+        } catch {
+            showFeedback('❌ Could not connect to server.', 'error');
+        }
+    }
+
+    function showFeedback(text, type) {
+        const el = document.getElementById('feedback');
+        el.textContent = text;
+        el.className = type;
+        setTimeout(() => { el.className = ''; el.textContent = ''; }, 6000);
+    }
+
+    // ── Queue display ──────────────────────────────────────────────────────────
+    async function loadQueue() {
+        try {
+            const res   = await fetch('/queue');
+            const items = await res.json();
+            renderQueue(items);
+        } catch {
+            console.error('Failed to load queue.');
+        }
+    }
+
+    function renderQueue(items) {
+        const tableEl   = document.getElementById('queue-table');
+        const summaryEl = document.getElementById('queue-summary');
+
+        if (!items.length) {
+            tableEl.innerHTML   = '<p class="empty-msg">The queue is empty.</p>';
+            summaryEl.textContent = '';
+            return;
+        }
+
+        // Build summary counts
+        const counts = { pending: 0, downloading: 0, done: 0, error: 0 };
+        items.forEach(i => counts[i.status] = (counts[i.status] || 0) + 1);
+        summaryEl.textContent =
+            `${items.length} total · ${counts.pending} pending · ` +
+            `${counts.downloading} active · ${counts.done} done · ${counts.error} errors`;
+
+        // Render table (newest first)
+        const rows = items.slice().reverse().map(item => `
+            <tr>
+                <td>${item.id}</td>
+                <td class="artist-cell">${esc(item.artist)}</td>
+                <td><span class="badge badge-${item.status}">${item.status}</span></td>
+                <td>${item.added}</td>
+                <td>${item.finished || '—'}</td>
+            </tr>
+        `).join('');
+
+        tableEl.innerHTML = `
+            <table>
+                <thead>
+                    <tr>
+                        <th>#</th><th>Artist</th><th>Status</th>
+                        <th>Queued</th><th>Finished</th>
+                    </tr>
+                </thead>
+                <tbody>${rows}</tbody>
+            </table>
+        `;
+    }
+
+    // Prevent XSS in table cells
+    function esc(str) {
+        const d = document.createElement('div');
+        d.appendChild(document.createTextNode(str || ''));
+        return d.innerHTML;
+    }
+
+    // ── Clear completed entries ────────────────────────────────────────────────
+    async function clearCompleted() {
+        await fetch('/clear-completed', { method: 'POST' });
+        loadQueue();
+    }
+
+    // ── Auto-refresh queue every 5s when Queue tab is open ────────────────────
+    setInterval(() => {
+        if (document.getElementById('panel-queue').classList.contains('active')) {
+            loadQueue();
+        }
+    }, 5000);
+</script>
+</body>
+</html>
