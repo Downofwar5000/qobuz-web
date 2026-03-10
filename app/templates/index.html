@@ -70,6 +70,14 @@
         .badge-error       { background: #7f1d1d; color: #fca5a5; }
 
         @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.55; } }
+        .output-row td  { padding: 0 12px 10px; }
+        .output-box     {
+        background: #0a0a14; border-radius: 6px; padding: 10px;
+        font-size: 0.78rem; white-space: pre-wrap; word-break: break-all;
+        color: #9ca3af; margin: 0; max-height: 160px; overflow-y: auto;
+}
+.output-error   { border-left: 3px solid #b91c1c; color: #fca5a5; }
+
     </style>
 </head>
 <body>
@@ -182,7 +190,7 @@
             `${counts.downloading} active · ${counts.done} done · ${counts.error} errors`;
 
         // Render table (newest first)
-        const rows = items.slice().reverse().map(item => `
+       const rows = items.slice().reverse().map(item => `
             <tr>
                 <td>${item.id}</td>
                 <td class="artist-cell">${esc(item.artist)}</td>
@@ -190,7 +198,14 @@
                 <td>${item.added}</td>
                 <td>${item.finished || '—'}</td>
             </tr>
+            ${item.output ? `
+            <tr class="output-row">
+                <td colspan="5">
+                    <pre class="output-box ${item.status === 'error' ? 'output-error' : ''}">${esc(item.output)}</pre>
+                </td>
+            </tr>` : ''}
         `).join('');
+
 
         tableEl.innerHTML = `
             <table>
