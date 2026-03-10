@@ -61,13 +61,7 @@ def build_command(artist):
 
 
 def run_worker():
-    """
-    Background worker thread.
-    Processes one item at a time and logs ALL qobuz-dl output so errors
-    are visible via: docker logs -f qobuz-web
-    """
     global worker_active
-
     while True:
         item = None
 
@@ -80,7 +74,18 @@ def run_worker():
 
         if item is None:
             worker_active = False
+            log.info("Worker: no items, exiting")
             return
+
+        log.info(f"Worker: processing item id={item['id']} artist={item['artist']}")
+        time.sleep(5)  # pretend to work for 5s
+
+        with queue_lock:
+            item["status"]   = "done"
+            item["finished"] = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+            item["output"]   = "TEST: worker stub ran OK"
+        log.info(f"Worker: finished item id={item['id']}")
+
 
         # ── Run qobuz-dl and capture everything ───────────────────────────────
         log.info(f"=== Starting download: {item['artist']} ===")
